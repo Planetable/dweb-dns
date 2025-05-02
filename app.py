@@ -200,6 +200,7 @@ def fc_resolve(name):
     api = api + name
     r = requests.get(api)
     if r.status_code == 200:
+        print("Found bio for " + name, flush=True)
         o = r.json()
         if "result" in o and "user" in o["result"] and "profile" in o["result"]["user"] and "bio" in o["result"]["user"]["profile"]:
             bio = o["result"]["user"]["profile"]["bio"]["text"]
@@ -235,36 +236,41 @@ def fc_resolve(name):
         o = r.json()
         if "fid" in o:
             fid = o["fid"]
+            print("Found fid for " + name + ": " + str(fid), flush=True)
             api = hub + "/v1/userDataByFid?fid=" + str(fid) + "&user_data_type=5"
             r = requests.get(api)
             if r.status_code == 200:
                 o = r.json()
-                if "data" in o and "userDataBody" in o["data"] and "value" in o["data"]["userDataBody"]:
-                    value = o["data"]["userDataBody"]["value"]
-                    # find IPNS in value
-                    ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(value)
-                    if ipns is not None:
-                        result = "dnslink=/ipns/" + ipns.group(1)
-                        log_successful_resolve("furl", name, result)
-                        q.enqueue(prewarm, result)
-                        cache_result(cache_key, result)
-                        return result
-                    # find CIDv0 in value
-                    cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
-                    if cidv0 is not None:
-                        result = "dnslink=/ipfs/" + cidv0.group(1)
-                        log_successful_resolve("furl", name, result)
-                        q.enqueue(prewarm, result)
-                        cache_result(cache_key, result)
-                        return result
-                    # find CIDv1 in value
-                    cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
-                    if cidv1 is not None:
-                        result = "dnslink=/ipfs/" + cidv1.group(1)
-                        log_successful_resolve("furl", name, result)
-                        q.enqueue(prewarm, result)
-                        cache_result(cache_key, result)
-                        return result
+                print("Found user data for " + name + ": " + str(o), flush=True)
+                if "messages" in o:
+                    messages = o["messages"]
+                for message in messages:
+                    if "data" in message and "userDataBody" in message["data"] and "value" in message["data"]["userDataBody"] and message["data"]["userDataBody"]["type"] == "USER_DATA_TYPE_URL":
+                        value = message["data"]["userDataBody"]["value"]
+                        # find IPNS in value
+                        ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(value)
+                        if ipns is not None:
+                            result = "dnslink=/ipns/" + ipns.group(1)
+                            log_successful_resolve("furl", name, result)
+                            q.enqueue(prewarm, result)
+                            cache_result(cache_key, result)
+                            return result
+                        # find CIDv0 in value
+                        cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
+                        if cidv0 is not None:
+                            result = "dnslink=/ipfs/" + cidv0.group(1)
+                            log_successful_resolve("furl", name, result)
+                            q.enqueue(prewarm, result)
+                            cache_result(cache_key, result)
+                            return result
+                        # find CIDv1 in value
+                        cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
+                        if cidv1 is not None:
+                            result = "dnslink=/ipfs/" + cidv1.group(1)
+                            log_successful_resolve("furl", name, result)
+                            q.enqueue(prewarm, result)
+                            cache_result(cache_key, result)
+                            return result
     return None
 
 

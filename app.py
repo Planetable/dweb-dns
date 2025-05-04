@@ -244,6 +244,8 @@ def fc_resolve(name):
                 print("Found user data for " + name + ": " + str(o), flush=True)
                 if "messages" in o:
                     messages = o["messages"]
+                else:
+                    messages = [o]
                 for message in messages:
                     if "data" in message and "userDataBody" in message["data"] and "value" in message["data"]["userDataBody"] and message["data"]["userDataBody"]["type"] == "USER_DATA_TYPE_URL":
                         value = message["data"]["userDataBody"]["value"]

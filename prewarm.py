@@ -77,7 +77,7 @@ def resolve_ipns(ipns: str) -> str:
     url = config.ipfs_api_server + "api/v0/name/resolve?arg=" + ipns + "&recursive=true&stream=true&nocache=true"
     try:
         print("POST: " + url, flush=True)
-        r = requests.post(url)
+        r = requests.post(url, timeout=30)
         if r.status_code == 200:
             lines = r.text.split("\n")
             for line in lines:

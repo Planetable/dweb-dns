@@ -16,17 +16,19 @@ def prewarm(result: str):
     if result.startswith('/ipfs/'):
         ipfs = result[6:]
         if ipfs.startswith("ba"):
-            q.enqueue(eth_limo_ipfs, ipfs)
+            # q.enqueue(eth_limo_ipfs, ipfs)
+            pass
         print("Prewarming IPFS: " + result, flush=True)
         load_ipfs_hash(result)
     if result.startswith('/ipns/'):
         ipns = result[6:]
-        q.enqueue(eth_limo_ipns, ipns)
+        # q.enqueue(eth_limo_ipns, ipns)
         resolved = resolve_ipns(ipns)
         if resolved.startswith('/ipfs/'):
             ipfs = resolved[6:]
             if ipfs.startswith("ba"):
-                q.enqueue(eth_limo_ipfs, ipfs)
+                # q.enqueue(eth_limo_ipfs, ipfs)
+                pass
         print("Prewarming Resolved IPNS: " + result + " -> " + resolved, flush=True)
         load_ipfs_hash(resolved)
 

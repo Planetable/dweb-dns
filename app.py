@@ -113,8 +113,11 @@ def sol_resolve(name):
         q.enqueue(prewarm, result)
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
         return result
+    web3bio_headers = {
+        "X-API-KEY": "Bearer " + config.web3bio_api_key
+    }
     web3bio = "https://api.web3.bio/domain/" + name
-    r = requests.get(web3bio)
+    r = requests.get(web3bio, headers=web3bio_headers, timeout=10)
     if r.status_code == 200:
         print("Found web3.bio result for " + name, flush=True)
         o = r.json()

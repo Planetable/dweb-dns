@@ -121,38 +121,42 @@ def sol_resolve(name):
     if r.status_code == 200:
         print("Found web3.bio result for " + name, flush=True)
         o = r.json()
-        if "texts" in o and "ipns" in o["texts"] and o["texts"]["ipns"] is not None:
-            ipns = o["texts"]["ipns"]
-            if ipns.startswith("k51") or ipns.startswith("k2"):
-                # return "dnslink=" + handle_ipns(ipns)
-                result = "dnslink=/ipns/" + ipns
-                log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
-                cache_result(cache_key, result)
-                return result
-            if ipns.startswith("ipns://"):
-                ipns = str(ipns[len("ipns://") :])
-                # return "dnslink=" + handle_ipns(ipns)
-                result = "dnslink=/ipns/" + ipns
-                log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
-                cache_result(cache_key, result)
-                return result
-        if "texts" in o and "ipfs" in o["texts"] and o["texts"]["ipfs"] is not None:
-            ipfs = o["texts"]["ipfs"]
-            if ipfs.startswith("Qm") or ipfs.startswith("baf"):
-                result = "dnslink=/ipfs/" + ipfs
-                log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
-                cache_result(cache_key, result)
-                return result
-            if ipfs.startswith("ipfs://"):
-                ipfs = str(ipfs[len("ipfs://") :])
-                result = "dnslink=/ipfs/" + ipfs
-                log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
-                cache_result(cache_key, result)
-                return result
+        try:
+            if "texts" in o and "ipns" in o["texts"] and o["texts"]["ipns"] is not None:
+                ipns = o["texts"]["ipns"]
+                if ipns.startswith("k51") or ipns.startswith("k2"):
+                    # return "dnslink=" + handle_ipns(ipns)
+                    result = "dnslink=/ipns/" + ipns
+                    log_successful_resolve("sol", name, result)
+                    q.enqueue(prewarm, result)
+                    cache_result(cache_key, result)
+                    return result
+                if ipns.startswith("ipns://"):
+                    ipns = str(ipns[len("ipns://") :])
+                    # return "dnslink=" + handle_ipns(ipns)
+                    result = "dnslink=/ipns/" + ipns
+                    log_successful_resolve("sol", name, result)
+                    q.enqueue(prewarm, result)
+                    cache_result(cache_key, result)
+                    return result
+            if "texts" in o and "ipfs" in o["texts"] and o["texts"]["ipfs"] is not None:
+                ipfs = o["texts"]["ipfs"]
+                if ipfs.startswith("Qm") or ipfs.startswith("baf"):
+                    result = "dnslink=/ipfs/" + ipfs
+                    log_successful_resolve("sol", name, result)
+                    q.enqueue(prewarm, result)
+                    cache_result(cache_key, result)
+                    return result
+                if ipfs.startswith("ipfs://"):
+                    ipfs = str(ipfs[len("ipfs://") :])
+                    result = "dnslink=/ipfs/" + ipfs
+                    log_successful_resolve("sol", name, result)
+                    q.enqueue(prewarm, result)
+                    cache_result(cache_key, result)
+                    return result
+        except Exception as e:
+            print("Error parsing web3.bio response: " + str(e), flush=True)
+            print(traceback.format_exc(), flush=True)
     sns_sdk = "https://sns-sdk-proxy.bonfida.workers.dev"
     # try: /record-v2/{name}/IPNS
     query = sns_sdk + "/record-v2/" + name + "/IPNS"

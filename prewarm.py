@@ -1,5 +1,6 @@
 import json
 import crayons
+import hashlib
 import redis
 import requests
 import time
@@ -8,6 +9,12 @@ import config
 
 GATEWAYS = config.gateways
 q = Queue("dweb", connection=redis.Redis())
+PREWARM_READ_BYTES = getattr(config, "prewarm_read_bytes", 4096)
+
+def _lock_key(prefix, value):
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest}"
+
 
 def prewarm(result: str):
     if result.startswith('dnslink='):
@@ -35,15 +42,24 @@ def prewarm(result: str):
 def load_ipfs_hash(ipfs_hash):
     for gateway in GATEWAYS:
         url = gateway + ipfs_hash
-        print("Enqueueing: " + url, flush=True)
-        q.enqueue(request_ipfs_hash, url)
+        lock_key = _lock_key("gateway-fetch", url)
+        interval = getattr(config, "gateway_fetch_interval_seconds", 3600)
+        if q.connection.set(lock_key, "1", nx=True, ex=interval):
+            print("Enqueueing: " + url, flush=True)
+            q.enqueue(
+                request_ipfs_hash,
+                url,
+                job_timeout=75,
+                result_ttl=0,
+                failure_ttl=300,
+            )
     return None
 
 def request_ipfs_hash(ipfs_hash):
     try:
-        response = requests.get(ipfs_hash, timeout=60, allow_redirects=True)
-        if response.status_code == 200:
-            return response.text
+        with requests.get(ipfs_hash, timeout=60, allow_redirects=True, stream=True) as response:
+            if response.status_code == 200:
+                next(response.iter_content(chunk_size=PREWARM_READ_BYTES), b"")
     except requests.exceptions.RequestException as e:
         return None
 

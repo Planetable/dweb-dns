@@ -1,6 +1,7 @@
 import base64
 import copy
 import crayons
+import hashlib
 import json
 import re
 import time
@@ -22,6 +23,37 @@ logsnag = LogSnag(token=config.logsnag_token, project=config.logsnag_project)
 
 app = Flask(__name__)
 q = Queue("dweb", connection=redis.Redis())
+
+
+def _lock_key(prefix, value):
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest}"
+
+
+def enqueue_prewarm(result):
+    lock_key = _lock_key("prewarm", result)
+    interval = getattr(config, "prewarm_interval_seconds", 3600)
+    if q.connection.set(lock_key, "1", nx=True, ex=interval):
+        q.enqueue(
+            prewarm,
+            result,
+            job_timeout=120,
+            result_ttl=0,
+            failure_ttl=300,
+        )
+
+
+def enqueue_revalidate_ipns(ipns):
+    lock_key = _lock_key("revalidate-ipns", ipns)
+    interval = getattr(config, "revalidate_interval_seconds", 600)
+    if q.connection.set(lock_key, "1", nx=True, ex=interval):
+        q.enqueue(
+            revalidate_ipns,
+            ipns,
+            job_timeout=60,
+            result_ttl=0,
+            failure_ttl=300,
+        )
 
 
 def log_successful_resolve(channel, name, result):
@@ -110,7 +142,6 @@ def sol_resolve(name):
     if cached is not None:
         result = cached.decode("utf-8")
         log_successful_resolve("sol", name, result)
-        q.enqueue(prewarm, result)
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
         return result
     web3bio_headers = {
@@ -128,7 +159,7 @@ def sol_resolve(name):
                     # return "dnslink=" + handle_ipns(ipns)
                     result = "dnslink=/ipns/" + ipns
                     log_successful_resolve("sol", name, result)
-                    q.enqueue(prewarm, result)
+                    enqueue_prewarm(result)
                     cache_result(cache_key, result)
                     return result
                 if ipns.startswith("ipns://"):
@@ -136,7 +167,7 @@ def sol_resolve(name):
                     # return "dnslink=" + handle_ipns(ipns)
                     result = "dnslink=/ipns/" + ipns
                     log_successful_resolve("sol", name, result)
-                    q.enqueue(prewarm, result)
+                    enqueue_prewarm(result)
                     cache_result(cache_key, result)
                     return result
             if "texts" in o and "ipfs" in o["texts"] and o["texts"]["ipfs"] is not None:
@@ -144,14 +175,14 @@ def sol_resolve(name):
                 if ipfs.startswith("Qm") or ipfs.startswith("baf"):
                     result = "dnslink=/ipfs/" + ipfs
                     log_successful_resolve("sol", name, result)
-                    q.enqueue(prewarm, result)
+                    enqueue_prewarm(result)
                     cache_result(cache_key, result)
                     return result
                 if ipfs.startswith("ipfs://"):
                     ipfs = str(ipfs[len("ipfs://") :])
                     result = "dnslink=/ipfs/" + ipfs
                     log_successful_resolve("sol", name, result)
-                    q.enqueue(prewarm, result)
+                    enqueue_prewarm(result)
                     cache_result(cache_key, result)
                     return result
         except Exception as e:
@@ -169,7 +200,7 @@ def sol_resolve(name):
                 # return "dnslink=" + handle_ipns(ipns)
                 result = "dnslink=/ipns/" + ipns
                 log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
             if ipns.startswith("ipns://"):
@@ -177,7 +208,7 @@ def sol_resolve(name):
                 # return "dnslink=" + handle_ipns(ipns)
                 result = "dnslink=/ipns/" + ipns
                 log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
     # try: /record-v2/{name}/IPFS
@@ -190,14 +221,14 @@ def sol_resolve(name):
             if ipfs.startswith("Qm") or ipfs.startswith("baf"):
                 result = "dnslink=/ipfs/" + ipfs
                 log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
             if ipfs.startswith("ipfs://"):
                 ipfs = str(ipfs[len("ipfs://") :])
                 result = "dnslink=/ipfs/" + ipfs
                 log_successful_resolve("sol", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
     # try: /domain-data/{name}
@@ -217,7 +248,7 @@ def sol_resolve(name):
                     print("Found IPNS: " + ipns.group(1), flush=True)
                     result = "dnslink=/ipns/" + ipns.group(1)
                     log_successful_resolve("sol", name, result)
-                    q.enqueue(prewarm, result)
+                    enqueue_prewarm(result)
                     cache_result(cache_key, result)
                     return result
             except UnicodeDecodeError as e:
@@ -238,7 +269,6 @@ def fc_resolve(name):
     if cached is not None:
         result = cached.decode("utf-8")
         log_successful_resolve("furl", name, result)
-        q.enqueue(prewarm, result)
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
         return result
     api = api + name
@@ -253,7 +283,7 @@ def fc_resolve(name):
             if ipns is not None:
                 result = "dnslink=/ipns/" + ipns.group(1)
                 log_successful_resolve("furl", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
             # find CIDv0 in bio
@@ -261,7 +291,7 @@ def fc_resolve(name):
             if cidv0 is not None:
                 result = "dnslink=/ipfs/" + cidv0.group(1)
                 log_successful_resolve("furl", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
             # find CIDv1 in bio
@@ -269,7 +299,7 @@ def fc_resolve(name):
             if cidv1 is not None:
                 result = "dnslink=/ipfs/" + cidv1.group(1)
                 log_successful_resolve("furl", name, result)
-                q.enqueue(prewarm, result)
+                enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
     # second: try USER_DATA_TYPE=5 with Hub
@@ -298,7 +328,7 @@ def fc_resolve(name):
                         if ipns is not None:
                             result = "dnslink=/ipns/" + ipns.group(1)
                             log_successful_resolve("furl", name, result)
-                            q.enqueue(prewarm, result)
+                            enqueue_prewarm(result)
                             cache_result(cache_key, result)
                             return result
                         # find CIDv0 in value
@@ -306,7 +336,7 @@ def fc_resolve(name):
                         if cidv0 is not None:
                             result = "dnslink=/ipfs/" + cidv0.group(1)
                             log_successful_resolve("furl", name, result)
-                            q.enqueue(prewarm, result)
+                            enqueue_prewarm(result)
                             cache_result(cache_key, result)
                             return result
                         # find CIDv1 in value
@@ -314,7 +344,7 @@ def fc_resolve(name):
                         if cidv1 is not None:
                             result = "dnslink=/ipfs/" + cidv1.group(1)
                             log_successful_resolve("furl", name, result)
-                            q.enqueue(prewarm, result)
+                            enqueue_prewarm(result)
                             cache_result(cache_key, result)
                             return result
     return None
@@ -485,7 +515,7 @@ def handle_ipns(ipns: str) -> str:
     r_key = "ipns:" + ipns + ":results"
     latest = r.zrevrange(r_key, 0, 0)
     if latest is not None and len(latest) > 0:
-        q.enqueue(revalidate_ipns, ipns)
+        enqueue_revalidate_ipns(ipns)
         return latest[0].decode("utf-8")
     else:
         return resolve_ipns(ipns)

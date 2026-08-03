@@ -1,4 +1,3 @@
-import base64
 import copy
 import crayons
 import hashlib
@@ -18,6 +17,7 @@ from markupsafe import escape
 from logsnag import LogSnag
 from prewarm import resolve_ipns, prewarm
 import config
+import sns
 
 logsnag = LogSnag(token=config.logsnag_token, project=config.logsnag_project)
 
@@ -144,115 +144,18 @@ def sol_resolve(name):
         log_successful_resolve("sol", name, result)
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
         return result
-    web3bio_headers = {
-        "X-API-KEY": "Bearer " + config.web3bio_api_key
-    }
-    web3bio = "https://api.web3.bio/domain/" + name
-    r = requests.get(web3bio, headers=web3bio_headers, timeout=10)
-    if r.status_code == 200:
-        print("Found web3.bio result for " + name, flush=True)
-        o = r.json()
-        try:
-            if "texts" in o and "ipns" in o["texts"] and o["texts"]["ipns"] is not None:
-                ipns = o["texts"]["ipns"]
-                if ipns.startswith("k51") or ipns.startswith("k2"):
-                    # return "dnslink=" + handle_ipns(ipns)
-                    result = "dnslink=/ipns/" + ipns
-                    log_successful_resolve("sol", name, result)
-                    enqueue_prewarm(result)
-                    cache_result(cache_key, result)
-                    return result
-                if ipns.startswith("ipns://"):
-                    ipns = str(ipns[len("ipns://") :])
-                    # return "dnslink=" + handle_ipns(ipns)
-                    result = "dnslink=/ipns/" + ipns
-                    log_successful_resolve("sol", name, result)
-                    enqueue_prewarm(result)
-                    cache_result(cache_key, result)
-                    return result
-            if "texts" in o and "ipfs" in o["texts"] and o["texts"]["ipfs"] is not None:
-                ipfs = o["texts"]["ipfs"]
-                if ipfs.startswith("Qm") or ipfs.startswith("baf"):
-                    result = "dnslink=/ipfs/" + ipfs
-                    log_successful_resolve("sol", name, result)
-                    enqueue_prewarm(result)
-                    cache_result(cache_key, result)
-                    return result
-                if ipfs.startswith("ipfs://"):
-                    ipfs = str(ipfs[len("ipfs://") :])
-                    result = "dnslink=/ipfs/" + ipfs
-                    log_successful_resolve("sol", name, result)
-                    enqueue_prewarm(result)
-                    cache_result(cache_key, result)
-                    return result
-        except Exception as e:
-            print("Error parsing web3.bio response: " + str(e), flush=True)
-            print(traceback.format_exc(), flush=True)
-    sns_sdk = "https://sns-sdk-proxy.bonfida.workers.dev"
-    # try: /record-v2/{name}/IPNS
-    query = sns_sdk + "/record-v2/" + name + "/IPNS"
-    r = requests.get(query)
-    if r.status_code == 200:
-        o = r.json()
-        if "result" in o and o["result"] is not None and "deserialized" in o["result"]:
-            ipns = o["result"]["deserialized"]
-            if ipns.startswith("k51") or ipns.startswith("k2"):
-                # return "dnslink=" + handle_ipns(ipns)
-                result = "dnslink=/ipns/" + ipns
-                log_successful_resolve("sol", name, result)
-                enqueue_prewarm(result)
-                cache_result(cache_key, result)
-                return result
-            if ipns.startswith("ipns://"):
-                ipns = str(ipns[len("ipns://") :])
-                # return "dnslink=" + handle_ipns(ipns)
-                result = "dnslink=/ipns/" + ipns
-                log_successful_resolve("sol", name, result)
-                enqueue_prewarm(result)
-                cache_result(cache_key, result)
-                return result
-    # try: /record-v2/{name}/IPFS
-    query = sns_sdk + "/record-v2/" + name + "/IPFS"
-    r = requests.get(query)
-    if r.status_code == 200:
-        o = r.json()
-        if "result" in o and o["result"] is not None and "deserialized" in o["result"]:
-            ipfs = o["result"]["deserialized"]
-            if ipfs.startswith("Qm") or ipfs.startswith("baf"):
-                result = "dnslink=/ipfs/" + ipfs
-                log_successful_resolve("sol", name, result)
-                enqueue_prewarm(result)
-                cache_result(cache_key, result)
-                return result
-            if ipfs.startswith("ipfs://"):
-                ipfs = str(ipfs[len("ipfs://") :])
-                result = "dnslink=/ipfs/" + ipfs
-                log_successful_resolve("sol", name, result)
-                enqueue_prewarm(result)
-                cache_result(cache_key, result)
-                return result
-    # try: /domain-data/{name}
-    query = sns_sdk + "/domain-data/" + name
-    r = requests.get(query)
-    if r.status_code == 200:
-        o = r.json()
-        if "result" in o and o["result"] is not None:
-            result = o["result"]
-            try:
-                decoded = base64.b64decode(result)
-                # Discard non-UTF-8 parts and use the usable part of the string
-                decoded_str = decoded.decode('utf-8', errors='ignore')
-                # Use regex to find ipns=
-                ipns = re.compile(r"ipns=(k51[a-zA-Z0-9]{59})").search(decoded_str)
-                if ipns is not None:
-                    print("Found IPNS: " + ipns.group(1), flush=True)
-                    result = "dnslink=/ipns/" + ipns.group(1)
-                    log_successful_resolve("sol", name, result)
-                    enqueue_prewarm(result)
-                    cache_result(cache_key, result)
-                    return result
-            except UnicodeDecodeError as e:
-                print(f"UnicodeDecodeError: {e}", flush=True)
+    try:
+        path = sns.resolve_ipfs_ipns(name)
+    except Exception as e:
+        print("Error resolving via Solana RPC: " + str(e), flush=True)
+        print(traceback.format_exc(), flush=True)
+        return None
+    if path is not None:
+        result = "dnslink=" + path
+        log_successful_resolve("sol", name, result)
+        enqueue_prewarm(result)
+        cache_result(cache_key, result)
+        return result
     return None
 
 

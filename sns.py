@@ -25,6 +25,22 @@ VALIDATION_LENGTHS = {0: 0, 1: 32, 2: 20, 3: 32}
 
 RPC_URL = "https://mainnet.helius-rpc.com/?api-key=" + config.helius_api_key
 
+
+class _IPv4Adapter(requests.adapters.HTTPAdapter):
+    """Helius returns 403 Forbidden to IPv6 clients; force IPv4 connections.
+
+    Binding the source address to 0.0.0.0 makes urllib3 skip AF_INET6
+    candidates and connect over AF_INET only.
+    """
+
+    def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
+        kwargs["source_address"] = ("0.0.0.0", 0)
+        super().init_poolmanager(connections, maxsize, block, **kwargs)
+
+
+_rpc_session = requests.Session()
+_rpc_session.mount("https://", _IPv4Adapter())
+
 _B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _B58_INDEX = {c: i for i, c in enumerate(_B58_ALPHABET)}
 
@@ -132,7 +148,7 @@ def _get_multiple_accounts(keys):
             {"encoding": "base64", "commitment": "confirmed"},
         ],
     }
-    r = requests.post(RPC_URL, json=payload, timeout=10)
+    r = _rpc_session.post(RPC_URL, json=payload, timeout=10)
     r.raise_for_status()
     values = r.json().get("result", {}).get("value")
     if values is None:

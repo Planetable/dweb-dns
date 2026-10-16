@@ -157,7 +157,9 @@ def sol_resolve(name):
         result = "dnslink=" + path
         log_successful_resolve("sol", name, result)
         enqueue_prewarm(result)
-        cache_result(cache_key, result)
+        # On-chain SNS records rarely change, and popular names are queried
+        # many times a minute; each miss costs a Helius RPC call.
+        cache_result(cache_key, result, ttl=getattr(config, "sol_cache_seconds", 600))
         return result
     # Names without records get queried over and over; remember the miss so
     # each repeat doesn't cost an RPC call. RPC errors above stay uncached.

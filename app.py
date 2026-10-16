@@ -139,6 +139,9 @@ def sol_resolve(name):
     cache_key = "sol:" + name
     rs = redis.Redis(host="localhost", port=6379, db=0)
     cached = rs.get(cache_key)
+    if cached == b"":
+        print(crayons.yellow("Cache Hit (not found): " + name), flush=True)
+        return None
     if cached is not None:
         result = cached.decode("utf-8")
         log_successful_resolve("sol", name, result)
@@ -156,6 +159,9 @@ def sol_resolve(name):
         enqueue_prewarm(result)
         cache_result(cache_key, result)
         return result
+    # Names without records get queried over and over; remember the miss so
+    # each repeat doesn't cost an RPC call. RPC errors above stay uncached.
+    cache_result(cache_key, "", ttl=getattr(config, "sol_not_found_cache_seconds", 300))
     return None
 
 

@@ -2,7 +2,7 @@
 
 This is a simple DoH server for blockchain domains. Currently, it can support the following blockchain domains:
 
-- [.sol](https://sns.id/) - Solana Name Service
+- [.sns](https://sns.id/) - Solana Name Service (existing names were renamed from .sol, which still resolves)
 - [.fc](https://warpcast.com/) - Farcaster username's URL field
 - [.bit](https://did.id/)
 
@@ -14,10 +14,10 @@ Start a local instance:
 FLASK_DEBUG=true flask run --host=0.0.0.0
 ```
 
-Look up a [.sol](https://sns.id/) domain:
+Look up a [.sns](https://sns.id/) domain:
 
 ```bash
-curl -H "accept: application/dns-json" -X GET "http://127.0.0.1:5000/dns-query?name=ohlife.sol"
+curl -H "accept: application/dns-json" -X GET "http://127.0.0.1:5000/dns-query?name=ohlife.sns"
 ```
 
 Look up a [.bit](https://did.id/bit/) domain:
@@ -61,7 +61,8 @@ You can use this server with [Kubo](https://github.com/ipfs/kubo) by adding the 
 "DNS": {
   "Resolvers": {
     "bit.": "https://dweb-dns.v2ex.pro/dns-query",
-    "sol.": "https://dweb-dns.v2ex.pro/dns-query"
+    "sol.": "https://dweb-dns.v2ex.pro/dns-query",
+    "sns.": "https://dweb-dns.v2ex.pro/dns-query"
   }
 }
 ```

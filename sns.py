@@ -1,7 +1,7 @@
 """Solana Name Service (SNS) resolution over Solana JSON RPC.
 
-Derives .sol domain and record accounts on-chain and extracts their
-IPNS/IPFS records, replacing external resolver APIs.
+Derives .sns (formerly .sol) domain and record accounts on-chain and
+extracts their IPNS/IPFS records, replacing external resolver APIs.
 
 Reference: https://github.com/SolanaNameService/sns-sdk
 """
@@ -17,6 +17,11 @@ HASH_PREFIX = "SPL Name Service"
 NAME_PROGRAM_ID = "namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX"
 ROOT_DOMAIN_ACCOUNT = "58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx"
 CENTRAL_STATE_DOMAIN_RECORDS = "2pMnqHvei2N5oDcVGCRdZx48gqti199wr5CsyTTafsbo"
+
+# Existing SNS names display as .sns since the Aug 2026 migration. .sol is
+# moving to the Solana Record Service (SRS); until SRS-backed .sol resolves,
+# .sol names keep resolving to the same SNS accounts as .sns.
+TLDS = (".sol", ".sns")
 
 NAME_REGISTRY_LEN = 96
 RECORD_HEADER_LEN = 8
@@ -111,7 +116,7 @@ def _derive(name: str, parent: bytes, name_class: bytes = None) -> bytes:
 
 
 def get_domain_key(domain: str, record_version: int = None) -> bytes:
-    if domain.endswith(".sol"):
+    if domain.endswith(TLDS):
         domain = domain[:-4]
     record_class = b58decode(CENTRAL_STATE_DOMAIN_RECORDS) if record_version == 2 else None
     prefix = {1: "\x01", 2: "\x02"}.get(record_version, "\x00")
@@ -194,10 +199,10 @@ def _dnslink_path(kind: str, content: bytes) -> str:
 
 
 def resolve_ipfs_ipns(name: str) -> str:
-    """Resolve a .sol name to /ipns/... or /ipfs/..., or None if not found."""
+    """Resolve a .sns or .sol name to /ipns/... or /ipfs/..., or None if not found."""
     # DNS names are case-insensitive; on-chain SNS domains are canonical lowercase
     name = name.strip().lower()
-    domain = name[:-4] if name.endswith(".sol") else name
+    domain = name[:-4] if name.endswith(TLDS) else name
     keys = [
         get_record_v2_key(domain, "IPNS"),
         get_record_v2_key(domain, "IPFS"),

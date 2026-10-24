@@ -118,7 +118,9 @@ def cache_result(cache_key, result, ttl=30):
 
 def sol_resolve(name):
     print(crayons.cyan("Resolving Solana Name: " + name), flush=True)
-    cache_key = "sol:" + name
+    # .sol and .sns resolve to the same accounts today, but keep separate
+    # cache namespaces so sol:* can be flushed alone when .sol moves to SRS.
+    cache_key = ("sns:" if name.endswith(".sns") else "sol:") + name
     rs = redis.Redis(host="localhost", port=6379, db=0)
     cached = rs.get(cache_key)
     if cached == b"":
@@ -285,6 +287,8 @@ def dns_query():
                         name = name[0:-1]
                     if name.endswith(".sol."):
                         name = name[0:-1]
+                    if name.endswith(".sns."):
+                        name = name[0:-1]
                     if name.endswith(".fc."):
                         name = name[0:-1]
                     if name.endswith(".eth."):
@@ -295,6 +299,8 @@ def dns_query():
                     if name.endswith(".bit"):
                         result = dotbit_resolve(name)
                     if name.endswith(".sol"):
+                        result = sol_resolve(name)
+                    if name.endswith(".sns"):
                         result = sol_resolve(name)
                     if name.endswith(".fc"):
                         result = fc_resolve(name)
@@ -357,6 +363,8 @@ def dns_query():
         name = name[0:-1]
     if name.endswith(".sol."):
         name = name[0:-1]
+    if name.endswith(".sns."):
+        name = name[0:-1]
     if name.endswith(".fc."):
         name = name[0:-1]
 
@@ -369,6 +377,8 @@ def dns_query():
     if name.endswith(".bit"):
         result = dotbit_resolve(name)
     if name.endswith(".sol"):
+        result = sol_resolve(name)
+    if name.endswith(".sns"):
         result = sol_resolve(name)
     if name.endswith(".fc"):
         result = fc_resolve(name)

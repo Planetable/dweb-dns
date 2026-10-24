@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest import mock
 import dns.message
@@ -63,6 +64,41 @@ class BasicTests(unittest.TestCase):
             self.assertTrue(enqueued.called)
             for call in enqueued.call_args_list:
                 self.assertEqual(call.kwargs['ttl'], 600)
+
+    def test_failing_targets_retry_twice_a_day(self):
+        ipns, url = 'k51-test-always-fails', 'https://dweb.link/ipns/k51-test-always-fails'
+        try:
+            # An IPNS name that doesn't resolve: retried after 15 minutes, then every 12 hours.
+            failed = mock.Mock(status_code=500, text='{"Message":"could not resolve name"}')
+            with mock.patch.object(prewarm.requests, 'post', return_value=failed):
+                self.assertEqual(prewarm.resolve_ipns(ipns), '/ipns/' + ipns)
+            key = prewarm._lock_key('ipns-failure', ipns)
+            self.assertAlmostEqual(int(prewarm.q.connection.hget(key, 'backoff_until')) - time.time(), 15 * 60, delta=5)
+            prewarm.record_failure('ipns', ipns)
+            self.assertAlmostEqual(int(prewarm.q.connection.hget(key, 'backoff_until')) - time.time(), 12 * 3600, delta=5)
+            with mock.patch.object(q.connection, 'set', return_value=True):
+                with mock.patch.object(q, 'enqueue') as enqueued:
+                    enqueue_revalidate_ipns(ipns)
+                    enqueue_prewarm('dnslink=/ipns/' + ipns)
+            self.assertFalse(enqueued.called)
+            resolved = mock.Mock(status_code=200, text='{"Path":"/ipfs/bafytest"}\n')
+            with mock.patch.object(prewarm.requests, 'post', return_value=resolved):
+                prewarm.resolve_ipns(ipns)
+            self.assertFalse(prewarm.in_failure_backoff('ipns', ipns))
+
+            # A gateway fetch that times out stops being enqueued.
+            with mock.patch.object(prewarm.requests, 'get', side_effect=prewarm.requests.exceptions.Timeout()):
+                prewarm.request_ipfs_hash(url)
+            self.assertTrue(prewarm.in_failure_backoff('gateway-fetch', url))
+            with mock.patch.object(prewarm.q.connection, 'set', return_value=True):
+                with mock.patch.object(prewarm.q, 'enqueue') as enqueued:
+                    prewarm.load_ipfs_hash('/ipns/' + ipns)
+            # Other gateways are still prewarmed; only the failing URL is skipped.
+            self.assertNotIn(url, [call.args[1] for call in enqueued.call_args_list])
+        finally:
+            prewarm.clear_failure('ipns', ipns)
+            prewarm.clear_failure('gateway-fetch', url)
+            prewarm.q.connection.delete('ipns:' + ipns + ':results')
 
 if __name__ == "__main__":
     unittest.main()

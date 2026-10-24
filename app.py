@@ -14,7 +14,7 @@ import requests
 from rq import Queue
 from flask import Flask, make_response, request
 from markupsafe import escape
-from prewarm import resolve_ipns, prewarm
+from prewarm import in_failure_backoff, resolve_ipns, prewarm
 import config
 import sns
 
@@ -28,6 +28,9 @@ def _lock_key(prefix, value):
 
 
 def enqueue_prewarm(result):
+    # An IPNS name that keeps failing to resolve is retried twice a day at most.
+    if result.startswith("dnslink=/ipns/") and in_failure_backoff("ipns", result[len("dnslink=/ipns/"):]):
+        return
     lock_key = _lock_key("prewarm", result)
     interval = getattr(config, "prewarm_interval_seconds", 3600)
     try:
@@ -48,6 +51,8 @@ def enqueue_prewarm(result):
 
 
 def enqueue_revalidate_ipns(ipns):
+    if in_failure_backoff("ipns", ipns):
+        return
     lock_key = _lock_key("revalidate-ipns", ipns)
     interval = getattr(config, "revalidate_interval_seconds", 600)
     try:

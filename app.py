@@ -30,27 +30,34 @@ def _lock_key(prefix, value):
 def enqueue_prewarm(result):
     lock_key = _lock_key("prewarm", result)
     interval = getattr(config, "prewarm_interval_seconds", 3600)
-    if q.connection.set(lock_key, "1", nx=True, ex=interval):
-        q.enqueue(
-            prewarm,
-            result,
-            job_timeout=120,
-            result_ttl=0,
-            failure_ttl=300,
-        )
+    try:
+        if q.connection.set(lock_key, "1", nx=True, ex=interval):
+            q.enqueue(
+                prewarm,
+                result,
+                job_timeout=120,
+                result_ttl=0,
+                failure_ttl=300,
+            )
+    except redis.exceptions.RedisError as e:
+        # Prewarming is best effort; a Redis outage must not fail the lookup.
+        print("Redis error enqueueing prewarm: " + str(e), flush=True)
 
 
 def enqueue_revalidate_ipns(ipns):
     lock_key = _lock_key("revalidate-ipns", ipns)
     interval = getattr(config, "revalidate_interval_seconds", 600)
-    if q.connection.set(lock_key, "1", nx=True, ex=interval):
-        q.enqueue(
-            revalidate_ipns,
-            ipns,
-            job_timeout=60,
-            result_ttl=0,
-            failure_ttl=300,
-        )
+    try:
+        if q.connection.set(lock_key, "1", nx=True, ex=interval):
+            q.enqueue(
+                revalidate_ipns,
+                ipns,
+                job_timeout=60,
+                result_ttl=0,
+                failure_ttl=300,
+            )
+    except redis.exceptions.RedisError as e:
+        print("Redis error enqueueing IPNS revalidation: " + str(e), flush=True)
 
 
 def make_rr(simple, rdata):
@@ -113,8 +120,12 @@ def output(message, ct="application/dns-json"):
 
 def cache_result(cache_key, result, ttl=30):
     rs = redis.Redis(host="localhost", port=6379, db=0)
-    rs.set(cache_key, result)
-    rs.expire(cache_key, ttl)
+    try:
+        # One SET ... EX so a failure can't leave the key without a TTL.
+        rs.set(cache_key, result, ex=ttl)
+    except redis.exceptions.RedisError as e:
+        # A failed cache write only costs a repeat lookup; still answer the query.
+        print("Redis error caching " + cache_key + ": " + str(e), flush=True)
 
 def sol_resolve(name):
     print(crayons.cyan("Resolving Solana Name: " + name), flush=True)

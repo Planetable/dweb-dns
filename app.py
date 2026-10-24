@@ -14,12 +14,9 @@ import requests
 from rq import Queue
 from flask import Flask, make_response, request
 from markupsafe import escape
-from logsnag import LogSnag
 from prewarm import resolve_ipns, prewarm
 import config
 import sns
-
-logsnag = LogSnag(token=config.logsnag_token, project=config.logsnag_project)
 
 app = Flask(__name__)
 q = Queue("dweb", connection=redis.Redis())
@@ -55,21 +52,6 @@ def enqueue_revalidate_ipns(ipns):
             failure_ttl=300,
         )
 
-
-def log_successful_resolve(channel, name, result):
-    if channel == "furl" and not name.endswith(".fc"):
-        name = name + ".fc"
-    logsnag.track(
-        channel=channel,
-        event=f"Successful Resolve",
-        description=f"{channel}/{name} -> {result}",
-        user_id=name,
-        notify=True,
-        tags={
-            "channel": channel,
-            "result": result
-        }
-    )
 
 def make_rr(simple, rdata):
     csimple = copy.copy(simple)
@@ -144,7 +126,6 @@ def sol_resolve(name):
         return None
     if cached is not None:
         result = cached.decode("utf-8")
-        log_successful_resolve("sol", name, result)
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
         return result
     try:
@@ -155,7 +136,6 @@ def sol_resolve(name):
         return None
     if path is not None:
         result = "dnslink=" + path
-        log_successful_resolve("sol", name, result)
         enqueue_prewarm(result)
         # On-chain SNS records rarely change, and popular names are queried
         # many times a minute; each miss costs a Helius RPC call.
@@ -179,7 +159,6 @@ def fc_resolve(name):
     cached = rs.get(cache_key)
     if cached is not None:
         result = cached.decode("utf-8")
-        log_successful_resolve("furl", name, result)
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
         return result
     api = api + name
@@ -193,7 +172,6 @@ def fc_resolve(name):
             ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(bio)
             if ipns is not None:
                 result = "dnslink=/ipns/" + ipns.group(1)
-                log_successful_resolve("furl", name, result)
                 enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
@@ -201,7 +179,6 @@ def fc_resolve(name):
             cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(bio)
             if cidv0 is not None:
                 result = "dnslink=/ipfs/" + cidv0.group(1)
-                log_successful_resolve("furl", name, result)
                 enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
@@ -209,7 +186,6 @@ def fc_resolve(name):
             cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(bio)
             if cidv1 is not None:
                 result = "dnslink=/ipfs/" + cidv1.group(1)
-                log_successful_resolve("furl", name, result)
                 enqueue_prewarm(result)
                 cache_result(cache_key, result)
                 return result
@@ -238,7 +214,6 @@ def fc_resolve(name):
                         ipns = re.compile(r"(k51[a-zA-Z0-9]{59})").search(value)
                         if ipns is not None:
                             result = "dnslink=/ipns/" + ipns.group(1)
-                            log_successful_resolve("furl", name, result)
                             enqueue_prewarm(result)
                             cache_result(cache_key, result)
                             return result
@@ -246,7 +221,6 @@ def fc_resolve(name):
                         cidv0 = re.compile(r"(Qm[a-zA-Z0-9]{44})").search(value)
                         if cidv0 is not None:
                             result = "dnslink=/ipfs/" + cidv0.group(1)
-                            log_successful_resolve("furl", name, result)
                             enqueue_prewarm(result)
                             cache_result(cache_key, result)
                             return result
@@ -254,7 +228,6 @@ def fc_resolve(name):
                         cidv1 = re.compile(r"(baf[a-zA-Z0-9]{56})").search(value)
                         if cidv1 is not None:
                             result = "dnslink=/ipfs/" + cidv1.group(1)
-                            log_successful_resolve("furl", name, result)
                             enqueue_prewarm(result)
                             cache_result(cache_key, result)
                             return result

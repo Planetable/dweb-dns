@@ -3,4 +3,3 @@ requests
 dnspython
 redis
 rq
-logsnag

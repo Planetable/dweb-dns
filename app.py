@@ -127,13 +127,22 @@ def cache_result(cache_key, result, ttl=30):
         # A failed cache write only costs a repeat lookup; still answer the query.
         print("Redis error caching " + cache_key + ": " + str(e), flush=True)
 
+def get_cached_result(cache_key):
+    """Cached bytes for cache_key, or None on a miss or when Redis is unavailable."""
+    rs = redis.Redis(host="localhost", port=6379, db=0)
+    try:
+        return rs.get(cache_key)
+    except redis.exceptions.RedisError as e:
+        # Treat an unreachable cache as a miss and resolve from the source.
+        print("Redis error reading " + cache_key + ": " + str(e), flush=True)
+        return None
+
 def sol_resolve(name):
     print(crayons.cyan("Resolving Solana Name: " + name), flush=True)
     # .sol and .sns resolve to the same accounts today, but keep separate
     # cache namespaces so sol:* can be flushed alone when .sol moves to SRS.
     cache_key = ("sns:" if name.endswith(".sns") else "sol:") + name
-    rs = redis.Redis(host="localhost", port=6379, db=0)
-    cached = rs.get(cache_key)
+    cached = get_cached_result(cache_key)
     if cached == b"":
         print(crayons.yellow("Cache Hit (not found): " + name), flush=True)
         return None
@@ -168,8 +177,7 @@ def fc_resolve(name):
     if name.endswith(".fc"):
         name = name[0:-3]
     cache_key = "furl:" + name
-    rs = redis.Redis(host="localhost", port=6379, db=0)
-    cached = rs.get(cache_key)
+    cached = get_cached_result(cache_key)
     if cached is not None:
         result = cached.decode("utf-8")
         print(crayons.green("Cache Hit: " + name + " -> " + result), flush=True)
@@ -418,7 +426,12 @@ def dns_query():
 def handle_ipns(ipns: str) -> str:
     r = redis.Redis(host="localhost", port=6379, db=0)
     r_key = "ipns:" + ipns + ":results"
-    latest = r.zrevrange(r_key, 0, 0)
+    try:
+        latest = r.zrevrange(r_key, 0, 0)
+    except redis.exceptions.RedisError as e:
+        # Fall through to a live resolve, which degrades on its own if Redis is down.
+        print("Redis error reading " + r_key + ": " + str(e), flush=True)
+        latest = None
     if latest is not None and len(latest) > 0:
         enqueue_revalidate_ipns(ipns)
         return latest[0].decode("utf-8")

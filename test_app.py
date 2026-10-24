@@ -40,5 +40,16 @@ class BasicTests(unittest.TestCase):
         self.assertIn(b'/ipns/k51qzi5uqu5dhbdxrvoeqy96c3krp2t1d9hfscjyn2mwts5f1w8f1sq99xwh3r', found.data)
         self.assertEqual(missing.status_code, 200)
 
+    def test_sol_survives_redis_down(self):
+        # Every Redis command fails, reads included, as when the server is unreachable.
+        refused = redis.exceptions.ConnectionError("Error 111 connecting to localhost:6379. Connection refused.")
+        with mock.patch.object(redis.Redis, 'execute_command', side_effect=refused):
+            for name in ['ohlife.sol', 'ohlife.sns']:
+                response = self.client.get('/dns-query?name=' + name)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(b'/ipns/k51qzi5uqu5dhbdxrvoeqy96c3krp2t1d9hfscjyn2mwts5f1w8f1sq99xwh3r', response.data)
+            missing = self.client.get('/dns-query?name=zz-no-such-name-71f3.sol')
+        self.assertEqual(missing.status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()

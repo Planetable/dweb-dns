@@ -38,6 +38,9 @@ def enqueue_prewarm(result):
                 job_timeout=120,
                 result_ttl=0,
                 failure_ttl=300,
+                # Prewarming only helps right after a lookup; drop jobs that wait
+                # longer than this so a slow queue can't pile up for weeks.
+                ttl=getattr(config, "queued_job_ttl_seconds", 600),
             )
     except redis.exceptions.RedisError as e:
         # Prewarming is best effort; a Redis outage must not fail the lookup.
@@ -55,6 +58,7 @@ def enqueue_revalidate_ipns(ipns):
                 job_timeout=60,
                 result_ttl=0,
                 failure_ttl=300,
+                ttl=getattr(config, "queued_job_ttl_seconds", 600),
             )
     except redis.exceptions.RedisError as e:
         print("Redis error enqueueing IPNS revalidation: " + str(e), flush=True)

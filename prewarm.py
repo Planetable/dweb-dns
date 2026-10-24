@@ -52,6 +52,8 @@ def load_ipfs_hash(ipfs_hash):
                 job_timeout=75,
                 result_ttl=0,
                 failure_ttl=300,
+                # A gateway fetch long after the lookup warms nothing; expire it.
+                ttl=getattr(config, "queued_job_ttl_seconds", 600),
             )
     return None
 

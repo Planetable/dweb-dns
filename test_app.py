@@ -2,7 +2,8 @@ import unittest
 from unittest import mock
 import dns.message
 import redis
-from app import app
+import prewarm
+from app import app, enqueue_prewarm, enqueue_revalidate_ipns, q
 
 class BasicTests(unittest.TestCase):
     def setUp(self):
@@ -50,6 +51,18 @@ class BasicTests(unittest.TestCase):
                 self.assertIn(b'/ipns/k51qzi5uqu5dhbdxrvoeqy96c3krp2t1d9hfscjyn2mwts5f1w8f1sq99xwh3r', response.data)
             missing = self.client.get('/dns-query?name=zz-no-such-name-71f3.sol')
         self.assertEqual(missing.status_code, 200)
+
+    def test_queued_jobs_expire(self):
+        # Without a ttl, jobs nobody got to piled up in the dweb queue for weeks.
+        for queue, enqueue in [(q, lambda: enqueue_prewarm('dnslink=/ipfs/bafytest')),
+                               (q, lambda: enqueue_revalidate_ipns('k51test')),
+                               (prewarm.q, lambda: prewarm.load_ipfs_hash('/ipfs/bafytest'))]:
+            with mock.patch.object(queue.connection, 'set', return_value=True):
+                with mock.patch.object(queue, 'enqueue') as enqueued:
+                    enqueue()
+            self.assertTrue(enqueued.called)
+            for call in enqueued.call_args_list:
+                self.assertEqual(call.kwargs['ttl'], 600)
 
 if __name__ == "__main__":
     unittest.main()
